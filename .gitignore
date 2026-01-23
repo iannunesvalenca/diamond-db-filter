@@ -1,0 +1,18 @@
+# Large Data Files
+*.gz
+*.dmnd
+*.faa
+*.map
+*.dmp
+
+# Intermediate Split Files
+keep_seqids*
+prot_map*
+
+# Temporary Pipes/Logs
+*.pipe
+*.log
+
+# System/Misc
+__pycache__/
+.DS_Store
