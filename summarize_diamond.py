@@ -142,10 +142,11 @@ def get_lineage(taxid, nodes_map, names_map):
 # DATAFRAME PROCESSING
 # ---------------------------------------------------------------------------------
 def process_diamond_report(input_file, nodes_map, names_map, merged_map, output_prefix=None):
+    # Matches the OPTIMIZED format from batch_blast_barcodes.sh
     cols = [
-        "staxids", "sscinames", "qseqid", "sseqid", "pident", "length", 
+        "qseqid", "sseqid", "pident", "length", 
         "mismatch", "gapopen", "qstart", "qend", "sstart", "send", 
-        "evalue", "bitscore", "full_qseq"
+        "evalue", "bitscore", "staxids", "sscinames", "sskingdoms", "skingdoms"
     ]
 
     print(f"\nProcessing {input_file}...")
@@ -213,7 +214,7 @@ def process_diamond_report(input_file, nodes_map, names_map, merged_map, output_
     
     out_cols = [
         "Kingdom", "Genus", "Species", "qseqid", "evalue", 
-        "pident", "length", "sseqid", "full_qseq", "sscinames"
+        "pident", "length", "sseqid", "sscinames"
     ]
     ranked_df = ranked_df[out_cols]
     

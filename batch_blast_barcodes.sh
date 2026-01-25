@@ -38,13 +38,14 @@ for fastq in "$INPUT_DIR"/*.fastq; do
     # Uses user-specified params: sensitive, max-target-seqs 2, evalue 1e-5
     # Added --threads 16 to maximize usage
     # Outputting staxids sscinames sskingdoms skingdoms for quick inspection
+    # OPTIMIZED: Top 1 hit only, No full sequence output (save space)
     diamond blastx \
         -q "$fastq" \
         -d "$DB" \
         -o "$output_file" \
         --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore staxids sscinames sskingdoms skingdoms \
         --evalue 0.001 \
-        --max-target-seqs 5 \
+        --max-target-seqs 1 \
         --very-sensitive \
         --frameshift 15 \
         --threads 16
