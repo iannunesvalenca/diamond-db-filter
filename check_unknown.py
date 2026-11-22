@@ -1,54 +1,80 @@
 #!/usr/bin/env python3
-"""Check what the Unknown/Other taxids are."""
+"""Inspect TaxIDs in keep_taxids.txt that do not map to target roots."""
+import argparse
+import os
 import sys
 
-# Define roots
-roots = {
-    9606: "Human",
-    2: "Bacteria", 
-    2157: "Archaea",
-    4751: "Fungi",
-    10239: "Viruses"
-}
+from audit_taxids import ROOTS, find_root, load_parent_map
 
-# Load taxonomy tree and names
-print("Loading nodes.dmp...", file=sys.stderr)
-parent = {}
-with open("/home/ian/taxdmp/nodes.dmp") as f:
-    for line in f:
-        parts = [p.strip() for p in line.split("|")]
-        taxid, par = int(parts[0]), int(parts[1])
-        parent[taxid] = par
 
-print("Loading names.dmp...", file=sys.stderr)
-names = {}
-with open("/home/ian/taxdmp/names.dmp") as f:
-    for line in f:
-        parts = [p.strip() for p in line.split("|")]
-        if parts[3] == "scientific name":
-            names[int(parts[0])] = parts[1]
+def load_scientific_names(names_path):
+    """Load NCBI names.dmp scientific names into a dict mapping taxid -> name."""
+    names = {}
+    with open(names_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) >= 4 and parts[3] == "scientific name":
+                names[int(parts[0])] = parts[1]
+    return names
 
-# Find Unknown/Other taxids
-print("\n=== Unknown/Other taxids ===", file=sys.stderr)
-unknown = []
-with open("/mnt/f/diamond_db_nr/keep_taxids.txt") as f:
-    for line in f:
-        taxid = int(line.strip())
-        t = taxid
-        found_root = None
-        visited = set()
-        while t in parent and t not in visited:
-            visited.add(t)
-            if t in roots:
-                found_root = t
-                break
-            t = parent[t]
-        if not found_root:
-            unknown.append(taxid)
 
-print(f"\nFound {len(unknown)} unknown taxids:")
-for t in unknown[:20]:
-    name = names.get(t, "NO NAME")
-    print(f"  {t}: {name}")
-if len(unknown) > 20:
-    print(f"  ... and {len(unknown)-20} more")
+def find_unknown_taxids(nodes_path, keep_taxids_path, roots=ROOTS):
+    """Return TaxIDs from keep_taxids_path that do not descend from any target root."""
+    parent = load_parent_map(nodes_path)
+    unknown = []
+    with open(keep_taxids_path, "r", encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if not raw:
+                continue
+            taxid = int(raw)
+            if find_root(taxid, parent, roots) is None:
+                unknown.append(taxid)
+    return unknown
+
+
+def main(argv=None):
+    taxdmp_dir = os.environ.get("TAXDMP_DIR", "taxdmp")
+    parser = argparse.ArgumentParser(
+        description="Inspect TaxIDs that do not map to the target taxonomic roots."
+    )
+    parser.add_argument(
+        "--nodes",
+        default=os.path.join(taxdmp_dir, "nodes.dmp"),
+        help="Path to NCBI nodes.dmp (default: $TAXDMP_DIR/nodes.dmp or taxdmp/nodes.dmp)",
+    )
+    parser.add_argument(
+        "--names",
+        default=os.path.join(taxdmp_dir, "names.dmp"),
+        help="Path to NCBI names.dmp (default: $TAXDMP_DIR/names.dmp or taxdmp/names.dmp)",
+    )
+    parser.add_argument(
+        "--keep-taxids",
+        default="keep_taxids.txt",
+        help="Path to file containing one TaxID per line (default: keep_taxids.txt)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of unknown TaxIDs to display (default: 20)",
+    )
+    args = parser.parse_args(argv)
+
+    print(f"Loading {args.names}...", file=sys.stderr)
+    names = load_scientific_names(args.names)
+    print(f"Checking {args.keep_taxids} against {args.nodes}...", file=sys.stderr)
+    unknown = find_unknown_taxids(args.nodes, args.keep_taxids)
+
+    print(f"\nFound {len(unknown)} unknown taxids:")
+    for t in unknown[: args.limit]:
+        name = names.get(t, "NO NAME")
+        print(f"  {t}: {name}")
+    if len(unknown) > args.limit:
+        print(f"  ... and {len(unknown) - args.limit} more")
+
+
+if __name__ == "__main__":
+    main()

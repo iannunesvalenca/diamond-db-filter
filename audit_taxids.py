@@ -1,54 +1,95 @@
 #!/usr/bin/env python3
-"""Audit taxid distribution by taxonomic group."""
+"""Audit TaxID distribution across major target taxonomic groups."""
+import argparse
+import os
 import sys
 from collections import defaultdict
 
-# Define roots
-roots = {
+ROOTS = {
     9606: "Human",
-    2: "Bacteria", 
+    2: "Bacteria",
     2157: "Archaea",
     4751: "Fungi",
-    10239: "Viruses"
+    10239: "Viruses",
 }
 
-# Load taxonomy tree
-print("Loading nodes.dmp...", file=sys.stderr)
-parent = {}
-with open("/home/ian/taxdmp/nodes.dmp") as f:
-    for line in f:
-        parts = [p.strip() for p in line.split("|")]
-        taxid, par = int(parts[0]), int(parts[1])
-        parent[taxid] = par
 
-# Build taxid->root mapping for all taxids in keep_taxids.txt
-print("Mapping taxids to roots...", file=sys.stderr)
-taxid_to_root = {}
-with open("/mnt/f/diamond_db_nr/keep_taxids.txt") as f:
-    for line in f:
-        taxid = int(line.strip())
-        # Walk up to find root
-        t = taxid
-        found_root = None
-        visited = set()
-        while t in parent and t not in visited:
-            visited.add(t)
-            if t in roots:
-                found_root = t
-                break
-            t = parent[t]
-        taxid_to_root[taxid] = found_root
+def load_parent_map(nodes_path):
+    """Load NCBI nodes.dmp into a dict mapping taxid -> parent_taxid."""
+    parent = {}
+    with open(nodes_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            parent[int(parts[0])] = int(parts[1])
+    return parent
 
-# Count per root
-print("Counting taxids per root...", file=sys.stderr)
-counts = defaultdict(int)
-for taxid, root in taxid_to_root.items():
-    if root:
-        counts[roots[root]] += 1
-    else:
-        counts["Unknown/Other"] += 1
 
-print("\n=== Taxids per group ===")
-for name, count in sorted(counts.items(), key=lambda x: -x[1]):
-    print(f"{name}: {count:,} taxids")
-print(f"Total: {sum(counts.values()):,} taxids")
+def find_root(taxid, parent, roots=ROOTS):
+    """Walk up the taxonomy tree and return the matching root TaxID, or None."""
+    t = taxid
+    visited = set()
+    while t in parent and t not in visited:
+        visited.add(t)
+        if t in roots:
+            return t
+        nxt = parent[t]
+        if nxt == t:
+            break
+        t = nxt
+    return None
+
+
+def audit_taxids(nodes_path, keep_taxids_path, roots=ROOTS):
+    """Count TaxIDs in keep_taxids_path grouped by major taxonomic root."""
+    parent = load_parent_map(nodes_path)
+    counts = defaultdict(int)
+    seen = set()
+
+    with open(keep_taxids_path, "r", encoding="utf-8") as f:
+        for line in f:
+            raw = line.strip()
+            if not raw:
+                continue
+            taxid = int(raw)
+            if taxid in seen:
+                continue
+            seen.add(taxid)
+            root = find_root(taxid, parent, roots)
+            if root is not None:
+                counts[roots[root]] += 1
+            else:
+                counts["Unknown/Other"] += 1
+
+    return dict(counts)
+
+
+def main(argv=None):
+    taxdmp_dir = os.environ.get("TAXDMP_DIR", "taxdmp")
+    parser = argparse.ArgumentParser(
+        description="Audit TaxID distribution by taxonomic group."
+    )
+    parser.add_argument(
+        "--nodes",
+        default=os.path.join(taxdmp_dir, "nodes.dmp"),
+        help="Path to NCBI nodes.dmp (default: $TAXDMP_DIR/nodes.dmp or taxdmp/nodes.dmp)",
+    )
+    parser.add_argument(
+        "--keep-taxids",
+        default="keep_taxids.txt",
+        help="Path to file containing one TaxID per line (default: keep_taxids.txt)",
+    )
+    args = parser.parse_args(argv)
+
+    print(f"Loading {args.nodes} and auditing {args.keep_taxids}...", file=sys.stderr)
+    counts = audit_taxids(args.nodes, args.keep_taxids)
+
+    print("\n=== Taxids per group ===")
+    for name, count in sorted(counts.items(), key=lambda x: (-x[1], x[0])):
+        print(f"{name}: {count:,} taxids")
+    print(f"Total: {sum(counts.values()):,} taxids")
+
+
+if __name__ == "__main__":
+    main()

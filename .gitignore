@@ -15,4 +15,5 @@ prot_map*
 
 # System/Misc
 __pycache__/
+.pytest_cache/
 .DS_Store
